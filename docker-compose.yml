@@ -1,0 +1,37 @@
+services:
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    command: ["http", "--listen-host", "0.0.0.0", "--port", "8082"]
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN}
+    expose:
+      - "8082"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      GITHUB_MCP_URL: http://github-mcp:8082
+    ports:
+      - "8000:8000"
+    depends_on:
+      - github-mcp
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    env_file:
+      - .env
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8001:8001"
+    depends_on:
+      - backend
+    restart: unless-stopped
