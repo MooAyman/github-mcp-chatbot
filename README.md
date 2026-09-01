@@ -2,6 +2,12 @@
 
 Production-oriented chatbot that lets users interact with GitHub through natural language. A Chainlit UI talks to a FastAPI backend, which runs an AI agent that calls GitHub tools through the official GitHub MCP server. OpenAI is the primary LLM; Gemini is used as a fallback. Write operations require explicit human approval before execution.
 
+## 🎥 Demo
+
+Watch the project demo video on Google Drive:
+
+[▶️ Watch the Demo](https://drive.google.com/file/d/1RhywWb9RnpQcopTBkgtSHkHzOh9X7rA_/view?usp=sharing)
+
 ## Architecture and request flow
 
 ```mermaid
