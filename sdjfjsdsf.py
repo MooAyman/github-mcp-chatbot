@@ -54,9 +54,7 @@ async def on_message(message: cl.Message) -> None:
             tool = approval_request.get("tool") or {}
             approval = await cl.AskActionMessage(
                 content=(
-                    f"Approval required for `{tool.get('name', 'GitHub tool')}`.\n\n"
-                    f"Arguments:\n```json\n"
-                    f"{json.dumps(tool.get('arguments', {}), indent=2)}\n```"
+                    f"Approval required for `{\n```"
                 ),
                 actions=[
                     cl.Action(name="approve", payload={}, label="Proceed"),
@@ -72,8 +70,6 @@ async def on_message(message: cl.Message) -> None:
                 show_response=approval_value == "approve",
             )
             if approval_value == "reject":
-                await cl.Message(content="Operation cancelled.").send()
-    except httpx.HTTPError:
-        await cl.Message(
+                await cl.Message(
             content="The request could not be completed. Please try again."
         ).send()
