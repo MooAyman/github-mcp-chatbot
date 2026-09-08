@@ -22,33 +22,7 @@ _pending_approvals: dict[str, tuple[str, AgentDecision]] = {}
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
-    session_id: str = Field(default="default", min_length=1)
-    approval: Literal["approve", "reject"] | None = None
-
-
-class ToolApproval(BaseModel):
-    name: str
-    arguments: dict[str, Any]
-
-
-class ChatResponse(BaseModel):
-    response: str = ""
-    approval_required: bool = False
-    tool: ToolApproval | None = None
-
-
-def _get_agent(session_id: str) -> GitHubAgent:
-    if session_id not in _agents:
-        _agents[session_id] = GitHubAgent(session_id=session_id)
-    return _agents[session_id]
-
-
-def _stream_response(response: str) -> StreamingResponse:
-    return StreamingResponse(
-        iter([response]),
-        media_type="text/plain",
-        background=BackgroundTask(flush),
-    )
+    user_id: str = Field(..., min_length=1)
 
 
 @app.get("/health")
