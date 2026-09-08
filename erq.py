@@ -70,15 +70,7 @@ async def chat(request: ChatRequest) -> StreamingResponse | JSONResponse:
                     arguments=decision.tool.arguments,
                 ),
             )
-            return JSONResponse(
-                content=approval_response.model_dump(),
-                background=BackgroundTask(flush),
-            )
-
-        async def event_stream():
-            try:
-                if first_event.text:
-                    yield first_event.text
+st_event.text
                 async for event in events:
                     if event.text:
                         yield event.text
