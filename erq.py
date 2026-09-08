@@ -1,96 +1,92 @@
-"""FastAPI application entry point."""
+"""Client for the GitHub MCP Server over stdio (local) or HTTP (Docker Compose)."""
 
 from __future__ import annotations
 
-import backend.env  # noqa: F401
+import os
+from contextlib import AsyncExitStack
 
-from typing import Any, Literal
+import httpx
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from starlette.background import BackgroundTask
-
-from backend.agent import AgentDecision, GitHubAgent
-from backend.observability import flush
-from backend.reliability import LLMError
-
-app = FastAPI(title="GitHub MCP Production Chatbot")
-_agents: dict[str, GitHubAgent] = {}
-_pending_approvals: dict[str, tuple[str, AgentDecision]] = {}
+GITHUB_MCP_IMAGE = "ghcr.io/github/github-mcp-server"
 
 
-class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    user_id: str = Field(..., min_length=1)
+class GitHubMCPClient:
+    """Connect to GitHub MCP, inspect tools, and close the connection."""
 
+    def __init__(self) -> None:
+        self._exit_stack = AsyncExitStack()
+        self._session: ClientSession | None = None
+        self._http_client: httpx.AsyncClient | None = None
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+    async def connect(self) -> GitHubMCPClient:
+        """Initialize MCP over HTTP (Compose) or Docker stdio (local dev)."""
+        if self._session is not None:
+            return self
 
+        token = os.getenv("GITHUB_PERSONAL_ACCESS_TOKEN")
+        if not token:
+            raise RuntimeError("GITHUB_PERSONAL_ACCESS_TOKEN is not set")
 
-@app.post("/chat", response_model=None)
-async def chat(request: ChatRequest) -> StreamingResponse | JSONResponse:
-    try:
-        if request.approval == "reject":
-            _pending_approvals.pop(request.session_id, None)
-            return _stream_response("Operation cancelled.")
-
-        agent = _get_agent(request.session_id)
-        if request.approval == "approve":
-            pending = _pending_approvals.pop(request.session_id, None)
-            if pending is None:
-                return _stream_response("There is no pending operation to approve.")
-            message, decision = pending
-            response = await agent.complete_decision(
-                message,
-                decision,
-                approved=True,
-            )
-            return _stream_response(response)
-
-        events = agent.stream_response(request.message)
+        mcp_url = os.getenv("GITHUB_MCP_URL", "").strip()
+        await self._exit_stack.__aenter__()
         try:
-            first_event = await anext(events)
-        except StopAsyncIteration:
-            return _stream_response("")
+            if mcp_url:
+                await self._connect_http(mcp_url, token)
+            else:
+                await self._connect_stdio(token)
+        except Exception:
+            await self.close()
+            raise
 
-        if first_event.approval is not None:
-            await events.aclose()
-            decision = first_event.approval
-            _pending_approvals[request.session_id] = (
-                request.message,
-                decision,
-            )
-            approval_response = ChatResponse(
-                approval_required=True,
-                tool=ToolApproval(
-                    name=decision.tool.name,
-                    arguments=decision.tool.arguments,
-                ),
-            )
-st_event.text
-                async for event in events:
-                    if event.text:
-                        yield event.text
-            except LLMError as exc:
-                yield f"\n\n{exc.user_message}"
-            except Exception:
-                yield (
-                    "\n\nThe language model is temporarily unavailable. "
-                    "Please try again."
-                )
+        return self
 
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/plain",
-            background=BackgroundTask(flush),
+    async def _connect_http(self, url: str, token: str) -> None:
+        self._http_client = httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
         )
-    except LLMError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.user_message) from exc
-    except Exception:
-        raise HTTPException(
-            status_code=502,
-            detail="The language model is temporarily unavailable. Please try again.",
+        self._exit_stack.push_async_callback(self._http_client.aclose)
+        read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
+            streamable_http_client(url.rstrip("/"), http_client=self._http_client)
         )
+        self._session = await self._exit_stack.enter_async_context(
+            ClientSession(read_stream, write_stream)
+        )
+        await self._session.initialize()
+
+    async def _connect_stdio(self, token: str) -> None:
+        server = StdioServerParameters(
+            command="docker",
+            args=[
+                "run",
+                "--rm",
+                "-i",
+                "-e",
+                "GITHUB_PERSONAL_ACCESS_TOKEN",
+                GITHUB_MCP_IMAGE,
+                "stdio",
+            ],
+            env={**os.environ, "GITHUB_PERSONAL_ACCESS_TOKEN": token},
+        )
+        read_stream, write_stream = await self._exit_stack.enter_async_context(
+            stdio_client(server)
+        )
+        self._session = await self._exit_stack.enter_async_context(
+            ClientSession(read_stream, write_stream)
+        )
+        await self._session.initialize()
+
+    async def list_tools(self):
+        """Return the tools advertised by the GitHub MCP Server."""
+        if self._session is None:
+            raise RuntimeError("GitHub MCP client is not connected")
+        return (await self._session.list_tools()).tools
+
+    async def close(self) -> None:
+        """Close the MCP session and transport."""
+        await self._exit_stack.aclose()
+        self._session = None
+        self._http_client = None
