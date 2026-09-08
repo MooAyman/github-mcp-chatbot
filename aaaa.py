@@ -1,17 +1,6 @@
 """Print the tools advertised by the GitHub MCP Server."""
 
-from __future__ import annotations
-
-import asyncio
-
-from dotenv import load_dotenv
-
-from backend.mcp.github_client import GitHubMCPClient
-
-
-async def main() -> None:
-    load_dotenv()
-    client = GitHubMCPClient()
+from
     try:
         await client.connect()
         tools = await client.list_tools()
