@@ -43,7 +43,11 @@ class GitHubMCPClient:
 
         return self
 
-
+    async def _connect_http(self, url: str, token: str) -> None:
+        self._http_client = httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
+        )
         self._exit_stack.push_async_callback(self._http_client.aclose)
         read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
             streamable_http_client(url.rstrip("/"), http_client=self._http_client)
@@ -81,8 +85,4 @@ class GitHubMCPClient:
             raise RuntimeError("GitHub MCP client is not connected")
         return (await self._session.list_tools()).tools
 
-    async def close(self) -> None:
-        """Close the MCP session and transport."""
-        await self._exit_stack.aclose()
-        self._session = None
-        self._http_client = None
+
