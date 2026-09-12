@@ -420,5 +420,3 @@ Returns `{"status": "ok"}`.
 - `application/json` — `{ "approval_required": true, "tool": { "name", "arguments" } }` when a write tool needs approval
 - `4xx/5xx` — normalized `LLMError` or generic 502 for unexpected failures
 
-<!-- incremental-verify 2026-09-08: isolated README note for documentation webhook test -->
-
